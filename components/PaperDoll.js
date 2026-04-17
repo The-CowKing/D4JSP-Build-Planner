@@ -26,7 +26,7 @@ export default function PaperDoll({ equipment, onEquip, onUnequip }) {
   };
 
   const getRarityColor = (rarity) => {
-    const rarityKey = rarity?.toLowerCase() || 'common';
+    const rarityKey = rarity?.toLowerCase().split(' ')[0] || 'common';
     return RARITY_COLORS[rarityKey] || RARITY_COLORS.common;
   };
 

@@ -25,8 +25,8 @@ export default function ItemSearch({ slotType, onSelect, onClose }) {
 
       try {
         let dbQuery = supabase
-          .from('d4_equipment')
-          .select('id, name, type, rarity, image_url')
+          .from('d4_items')
+          .select('cache_key, name, type, rarity, tooltip_image_url')
           .ilike('name', `%${query}%`)
           .limit(20);
 
@@ -54,7 +54,7 @@ export default function ItemSearch({ slotType, onSelect, onClose }) {
   }, [query, slotType]);
 
   const getRarityColor = (rarity) => {
-    const rarityKey = rarity?.toLowerCase() || 'common';
+    const rarityKey = rarity?.toLowerCase().split(' ')[0] || 'common';
     return RARITY_COLORS[rarityKey] || RARITY_COLORS.common;
   };
 
@@ -182,7 +182,7 @@ export default function ItemSearch({ slotType, onSelect, onClose }) {
 
         {results.map((item) => (
           <button
-            key={item.id}
+            key={item.cache_key}
             onClick={() => onSelect(item)}
             style={{
               padding: '12px',
