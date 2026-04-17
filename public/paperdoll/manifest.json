@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "note": "Paths reference assets under /public/paperdoll/. Add real PNGs here; the app falls back to generated SVG placeholders when files are missing.",
+  "base": {
+    "barbarian": {
+      "male":   "/paperdoll/base/barbarian/male.png",
+      "female": "/paperdoll/base/barbarian/female.png"
+    },
+    "druid": {
+      "male":   "/paperdoll/base/druid/male.png",
+      "female": "/paperdoll/base/druid/female.png"
+    },
+    "necromancer": {
+      "male":   "/paperdoll/base/necromancer/male.png",
+      "female": "/paperdoll/base/necromancer/female.png"
+    },
+    "rogue": {
+      "male":   "/paperdoll/base/rogue/male.png",
+      "female": "/paperdoll/base/rogue/female.png"
+    },
+    "sorcerer": {
+      "male":   "/paperdoll/base/sorcerer/male.png",
+      "female": "/paperdoll/base/sorcerer/female.png"
+    },
+    "spiritborn": {
+      "male":   "/paperdoll/base/spiritborn/male.png",
+      "female": "/paperdoll/base/spiritborn/female.png"
+    },
+    "paladin": {
+      "male":   "/paperdoll/base/paladin/male.png",
+      "female": "/paperdoll/base/paladin/female.png"
+    }
+  },
+  "appearances": {
+    "helm": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "amulet": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "chest": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "gloves": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "legs": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "boots": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "mainhand": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "offhand": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "ring1": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ],
+    "ring2": [
+      { "key": "base",     "label": "Base Appearance", "source": "base_drop", "classes": ["all"] }
+    ]
+  }
+}
