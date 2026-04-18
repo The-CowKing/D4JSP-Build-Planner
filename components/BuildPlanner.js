@@ -22,12 +22,25 @@ export default function BuildPlanner() {
 
   // Load all saved character slots from the DB on mount.
   useEffect(() => {
+    console.log('[BUILD-SAVE] Mount: fetching saved builds from DB');
     supabase
       .from('builds')
       .select('slot, name, class, gender, equipment, transmog, stats')
       .then(({ data, error }) => {
-        if (error) { console.error('Load failed:', error); return; }
-        if (!data?.length) return;
+        if (error) {
+          console.error('[BUILD-SAVE] Load error — table missing or RLS blocking SELECT:', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+          });
+          return;
+        }
+        if (!data?.length) {
+          console.log('[BUILD-SAVE] Load: no saved builds found (empty table or RLS filtered all rows)');
+          return;
+        }
+        console.log('[BUILD-SAVE] Load: received', data.length, 'builds from DB:', data.map(r => ({ slot: r.slot, name: r.name, class: r.class })));
         setCharacters((prev) => {
           const next = [...prev];
           data.forEach((row) => {
@@ -95,6 +108,17 @@ export default function BuildPlanner() {
 
   const handleSave = async () => {
     setSaveState('saving');
+
+    const anonKeyPresent = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    console.log('[BUILD-SAVE] Save triggered:', {
+      slot: activeCharacter,
+      name: currentChar.name,
+      class: currentChar.class,
+      gender: currentChar.gender,
+      equipmentSlots: Object.keys(currentChar.equipment).length,
+      authMode: anonKeyPresent ? 'anon-key (no user session)' : 'NO KEY — client will fail',
+    });
+
     try {
       const payload = {
         slot: activeCharacter,
@@ -107,16 +131,28 @@ export default function BuildPlanner() {
         updated_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase
+      console.log('[BUILD-SAVE] Calling supabase.from("builds").upsert() with payload:', payload);
+
+      const { data, error } = await supabase
         .from('builds')
-        .upsert(payload, { onConflict: 'slot' });
+        .upsert(payload, { onConflict: 'slot' })
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[BUILD-SAVE] Supabase upsert error:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+        throw error;
+      }
 
+      console.log('[BUILD-SAVE] Upsert success — rows affected:', data?.length ?? 0, data);
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2500);
     } catch (err) {
-      console.error('Save failed:', err);
+      console.error('[BUILD-SAVE] Save failed (full error):', err);
       setSaveState('error');
       setTimeout(() => setSaveState('idle'), 3000);
     }
