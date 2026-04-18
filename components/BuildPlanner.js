@@ -5,6 +5,34 @@ import { CLASSES } from '../data/class-data';
 import { DESIGN } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 
+// Ask the parent app (trade app) for its Supabase session via postMessage.
+// Times out after 3 s — returns null if not embedded or parent doesn't respond.
+function requestSessionFromParent() {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      console.log('[BUILD-SAVE] postMessage auth: no response from parent within 3 s');
+      resolve(null);
+    }, 3000);
+
+    function handler(event) {
+      if (event.data?.type !== 'D4JSP_AUTH_SESSION') return;
+      clearTimeout(timer);
+      window.removeEventListener('message', handler);
+      const { access_token, refresh_token } = event.data;
+      console.log('[BUILD-SAVE] postMessage auth: received session from parent');
+      supabase.auth
+        .setSession({ access_token, refresh_token })
+        .then(({ data }) => resolve(data.session ?? null));
+    }
+
+    window.addEventListener('message', handler);
+    // Tell the parent we're ready and need the auth session.
+    window.parent.postMessage({ type: 'D4JSP_REQUEST_AUTH' }, '*');
+    console.log('[BUILD-SAVE] postMessage auth: sent D4JSP_REQUEST_AUTH to parent');
+  });
+}
+
 const DEFAULT_CHARACTERS = Array(5).fill(null).map((_, i) => ({
   id: i,
   name: `Character ${i + 1}`,
@@ -21,21 +49,26 @@ export default function BuildPlanner() {
   const [saveState, setSaveState] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const [userId, setUserId] = useState(null);
 
-  // Ensure we have a Supabase session (anonymous auth) then load saved builds.
+  // Acquire the user's real auth session then load saved builds.
+  // Priority order:
+  //   1. Existing session in localStorage (same-domain embedding, or already logged in)
+  //   2. postMessage handshake with the parent trade app (iframe cross-domain)
+  //   3. No session → saves disabled, read-only mode
   useEffect(() => {
     async function initAndLoad() {
-      // Reuse existing session or create an anonymous one.
       let { data: { session } } = await supabase.auth.getSession();
+      console.log('[BUILD-SAVE] getSession result:', session ? `user_id=${session.user.id}` : 'none');
+
       if (!session) {
-        console.log('[BUILD-SAVE] No session — signing in anonymously');
-        const { data, error: signInError } = await supabase.auth.signInAnonymously();
-        if (signInError) {
-          console.error('[BUILD-SAVE] Anonymous sign-in failed:', signInError);
-          return;
-        }
-        session = data.session;
+        session = await requestSessionFromParent();
       }
-      const uid = session?.user?.id ?? null;
+
+      if (!session) {
+        console.warn('[BUILD-SAVE] No auth session — running read-only. Saves are disabled until the parent app provides a session.');
+        return;
+      }
+
+      const uid = session.user.id;
       console.log('[BUILD-SAVE] Session ready — user_id:', uid);
       setUserId(uid);
 
