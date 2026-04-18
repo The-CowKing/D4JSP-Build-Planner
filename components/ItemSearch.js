@@ -180,44 +180,74 @@ export default function ItemSearch({ slotType, onSelect, onClose }) {
           </div>
         )}
 
-        {results.map((item) => (
-          <button
-            key={item.cache_key}
-            onClick={() => onSelect(item)}
-            style={{
-              padding: '12px',
-              background: `linear-gradient(135deg, ${getRarityColor(item.rarity)}, ${getRarityColor(item.rarity)}11)`,
-              border: `1px solid ${getRarityColor(item.rarity)}`,
-              borderRadius: '2px',
-              color: getRarityColor(item.rarity),
-              textAlign: 'left',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              fontFamily: DESIGN.fonts.body,
-              fontSize: '13px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = `linear-gradient(135deg, ${getRarityColor(item.rarity)}, ${getRarityColor(item.rarity)}22)`;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = `linear-gradient(135deg, ${getRarityColor(item.rarity)}, ${getRarityColor(item.rarity)}11)`;
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>
-                {item.name}
+        {results.map((item) => {
+          const rc = getRarityColor(item.rarity);
+          return (
+            <button
+              key={item.cache_key}
+              onClick={() => onSelect(item)}
+              style={{
+                padding: '8px 12px',
+                background: `linear-gradient(135deg, ${rc}18, ${rc}08)`,
+                border: `1px solid ${rc}88`,
+                borderRadius: '2px',
+                color: rc,
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'all 0.18s ease',
+                fontFamily: DESIGN.fonts.body,
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = `linear-gradient(135deg, ${rc}28, ${rc}12)`;
+                e.currentTarget.style.transform = 'translateX(4px)';
+                e.currentTarget.style.borderColor = rc;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = `linear-gradient(135deg, ${rc}18, ${rc}08)`;
+                e.currentTarget.style.transform = 'translateX(0)';
+                e.currentTarget.style.borderColor = `${rc}88`;
+              }}
+            >
+              {/* Tooltip icon thumbnail */}
+              <div style={{
+                width: '44px',
+                height: '44px',
+                flexShrink: 0,
+                borderRadius: '2px',
+                border: `1px solid ${rc}55`,
+                background: 'rgba(0,0,0,0.4)',
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {item.tooltip_image_url ? (
+                  <img
+                    src={item.tooltip_image_url}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+                  />
+                ) : (
+                  <div style={{ width: '20px', height: '20px', borderRadius: '1px', border: `1px dashed ${rc}44` }} />
+                )}
               </div>
-              <div style={{ fontSize: '11px', opacity: 0.7 }}>
-                {item.type} • {item.rarity}
+
+              {/* Item name + meta */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {item.name}
+                </div>
+                <div style={{ fontSize: '11px', opacity: 0.65 }}>
+                  {item.type} • {item.rarity}
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
