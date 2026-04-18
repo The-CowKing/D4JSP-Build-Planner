@@ -1,24 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PaperDoll from './PaperDoll';
 import StatCalculator from './StatCalculator';
 import { CLASSES } from '../data/class-data';
 import { DESIGN } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 
+const DEFAULT_CHARACTERS = Array(5).fill(null).map((_, i) => ({
+  id: i,
+  name: `Character ${i + 1}`,
+  class: CLASSES[0].id,
+  gender: 'male',
+  equipment: {},
+  transmog: {},
+  stats: {},
+}));
+
 export default function BuildPlanner() {
   const [activeCharacter, setActiveCharacter] = useState(0);
-  const [characters, setCharacters] = useState(
-    Array(5).fill(null).map((_, i) => ({
-      id: i,
-      name: `Character ${i + 1}`,
-      class: CLASSES[0].id,
-      gender: 'male',
-      equipment: {},
-      transmog: {},
-      stats: {},
-    }))
-  );
+  const [characters, setCharacters] = useState(DEFAULT_CHARACTERS);
   const [saveState, setSaveState] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+
+  // Load all saved character slots from the DB on mount.
+  useEffect(() => {
+    supabase
+      .from('builds')
+      .select('slot, name, class, gender, equipment, transmog, stats')
+      .then(({ data, error }) => {
+        if (error) { console.error('Load failed:', error); return; }
+        if (!data?.length) return;
+        setCharacters((prev) => {
+          const next = [...prev];
+          data.forEach((row) => {
+            next[row.slot] = {
+              id: row.slot,
+              name: row.name,
+              class: row.class,
+              gender: row.gender,
+              equipment: row.equipment ?? {},
+              transmog: row.transmog ?? {},
+              stats: row.stats ?? {},
+            };
+          });
+          return next;
+        });
+      });
+  }, []);
 
   const currentChar = characters[activeCharacter];
 
