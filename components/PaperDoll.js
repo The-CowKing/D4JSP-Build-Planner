@@ -1,209 +1,251 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ItemSearch from './ItemSearch';
-import TransmogDropdown from './TransmogDropdown';
 import { GEAR_SLOTS } from '../data/gear-slots';
 import { DESIGN, RARITY_COLORS } from '../lib/constants';
 import {
-  SLOT_ZINDEX,
   generateBasePlaceholder,
-  generateGearPlaceholder,
   getBaseCharacterPath,
-  getGearAppearancePath,
+  CLASS_COLORS,
 } from '../lib/paperdoll-assets';
 
-// ─── Layout constants ────────────────────────────────────────────────────────
-// The paper doll is a 3-column arrangement:
-//   Left panel  → mainhand, gloves, ring1
-//   Center      → helm + amulet above portrait, boots below, portrait canvas in middle
-//   Right panel → offhand, chest, legs, ring2
-//
-// The portrait canvas (220 × 400) holds:
-//   • One <img> for the base character silhouette
-//   • One <img> per equipped slot as a full-canvas gear overlay, z-indexed
-//
-// Both image layers fall back to generated SVG data-URLs when the real PNGs
-// haven't landed yet, so the UI is testable from day one.
+// ─── Utility ──────────────────────────────────────────────────────────────────
+function hexRgb(hex) {
+  if (!hex || hex.length < 6) return '212,175,55';
+  const h = hex.replace('#', '');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ].join(',');
+}
 
-const LEFT_SLOTS  = ['mainhand', 'gloves', 'ring1'];
-const TOP_SLOTS   = ['helm', 'amulet'];
-const BOTTOM_SLOTS = ['boots'];
-const RIGHT_SLOTS = ['offhand', 'chest', 'legs', 'ring2'];
+function getRarityColor(rarity) {
+  const key = rarity?.toLowerCase().split(' ')[0] || 'common';
+  return RARITY_COLORS[key] || RARITY_COLORS.common;
+}
 
-// All slots sorted by ascending z-index for overlay render order
-const SLOTS_BY_ZINDEX = [...GEAR_SLOTS].sort(
-  (a, b) => (SLOT_ZINDEX[a.id] ?? 0) - (SLOT_ZINDEX[b.id] ?? 0)
-);
+// ─── Slot icon ────────────────────────────────────────────────────────────────
+// Shows tooltip_image_url when equipped, or a D4-style placeholder when empty.
+function SlotIcon({ slot, equipped, onClick, onUnequip, size = 56 }) {
+  const [imgError, setImgError] = useState(false);
 
-// ─── Slot button ─────────────────────────────────────────────────────────────
-function SlotButton({ slot, equipped, rarityColor, onClick, onUnequip, transmog, characterClass, onTransmogChange }) {
+  // Reset error state when a different item is equipped
+  useEffect(() => {
+    setImgError(false);
+  }, [equipped?.cache_key]);
+
+  const rarityColor = equipped ? getRarityColor(equipped.rarity) : null;
+  const rgb = rarityColor ? hexRgb(rarityColor) : '212,175,55';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-      {/* Clickable slot box */}
+    <div style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
       <div
         onClick={onClick}
         title={equipped ? equipped.name : `Equip ${slot.label}`}
         style={{
-          width: '56px',
-          height: '56px',
+          width: `${size}px`,
+          height: `${size}px`,
           background: equipped
-            ? `rgba(${hexRgb(rarityColor)}, 0.08)`
-            : 'rgba(212,175,55,0.05)',
+            ? `rgba(${rgb}, 0.14)`
+            : 'rgba(6,4,8,0.82)',
           border: equipped
-            ? `1px solid rgba(${hexRgb(rarityColor)}, 0.55)`
-            : '1px dashed rgba(212,175,55,0.28)',
-          borderRadius: '3px',
+            ? `1px solid rgba(${rgb}, 0.65)`
+            : '1px solid rgba(212,175,55,0.18)',
+          borderRadius: '2px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'pointer',
-          boxShadow: equipped ? `0 0 10px rgba(${hexRgb(rarityColor)}, 0.18)` : 'none',
-          transition: 'all 0.18s ease',
+          overflow: 'hidden',
+          boxShadow: equipped
+            ? `0 0 14px rgba(${rgb}, 0.28), inset 0 0 10px rgba(0,0,0,0.55)`
+            : 'inset 0 0 10px rgba(0,0,0,0.65)',
+          transition: 'all 0.15s ease',
+          backdropFilter: 'blur(3px)',
         }}
         onMouseEnter={(e) => {
-          const rgb = hexRgb(rarityColor ?? DESIGN.gold);
-          e.currentTarget.style.background = `rgba(${rgb}, 0.18)`;
           e.currentTarget.style.borderColor = rarityColor ?? DESIGN.gold;
+          e.currentTarget.style.boxShadow = `0 0 20px rgba(${rgb}, 0.45), inset 0 0 10px rgba(0,0,0,0.55)`;
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = equipped
-            ? `rgba(${hexRgb(rarityColor)}, 0.08)`
-            : 'rgba(212,175,55,0.05)';
           e.currentTarget.style.borderColor = equipped
-            ? `rgba(${hexRgb(rarityColor)}, 0.55)`
-            : 'rgba(212,175,55,0.28)';
+            ? `rgba(${rgb}, 0.65)`
+            : 'rgba(212,175,55,0.18)';
+          e.currentTarget.style.boxShadow = equipped
+            ? `0 0 14px rgba(${rgb}, 0.28), inset 0 0 10px rgba(0,0,0,0.55)`
+            : 'inset 0 0 10px rgba(0,0,0,0.65)';
         }}
       >
-        {equipped ? (
+        {equipped && equipped.tooltip_image_url && !imgError ? (
+          <img
+            src={equipped.tooltip_image_url}
+            alt={equipped.name}
+            onError={() => setImgError(true)}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              objectPosition: 'center top',
+            }}
+          />
+        ) : equipped ? (
           <div style={{
             color: rarityColor,
-            fontSize: '9px',
+            fontSize: '8px',
             fontFamily: DESIGN.fonts.body,
             textAlign: 'center',
             padding: '3px',
-            lineHeight: 1.25,
+            lineHeight: 1.2,
           }}>
-            <div style={{ fontWeight: 700, fontSize: '10px' }}>
+            <div style={{ fontWeight: 700, fontSize: '9px' }}>
               {equipped.name.length > 7 ? equipped.name.substring(0, 6) + '…' : equipped.name}
             </div>
-            <div style={{ opacity: 0.65, textTransform: 'capitalize', fontSize: '8px' }}>
+            <div style={{ opacity: 0.6, textTransform: 'capitalize', fontSize: '7px' }}>
               {equipped.rarity}
             </div>
           </div>
         ) : (
-          <span style={{
-            fontSize: '9px',
-            color: 'rgba(212,175,55,0.38)',
-            fontFamily: DESIGN.fonts.body,
-            textAlign: 'center',
-            lineHeight: 1.25,
-            padding: '2px',
-          }}>
-            {slot.label}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+            <div style={{
+              width: Math.round(size * 0.42) + 'px',
+              height: Math.round(size * 0.42) + 'px',
+              borderRadius: '1px',
+              border: '1px dashed rgba(212,175,55,0.22)',
+              opacity: 0.5,
+            }} />
+            <span style={{
+              fontSize: '7px',
+              color: 'rgba(212,175,55,0.38)',
+              fontFamily: DESIGN.fonts.body,
+              textAlign: 'center',
+              lineHeight: 1.1,
+              maxWidth: `${size - 6}px`,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {slot.label}
+            </span>
+          </div>
         )}
       </div>
 
-      {/* Equipped: transmog + remove row */}
       {equipped && (
-        <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-          <TransmogDropdown
-            slotId={slot.id}
-            characterClass={characterClass}
-            selectedKey={transmog ?? 'base'}
-            onSelect={(key) => onTransmogChange(slot.id, key)}
-          />
-          <button
-            onClick={onUnequip}
-            title="Remove"
-            style={{
-              padding: '1px 5px',
-              background: 'rgba(255,80,80,0.14)',
-              border: '1px solid rgba(255,80,80,0.38)',
-              color: '#ff6666',
-              fontSize: '9px',
-              fontFamily: DESIGN.fonts.body,
-              cursor: 'pointer',
-              borderRadius: '2px',
-              lineHeight: 1,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,80,80,0.32)';
-              e.currentTarget.style.borderColor = '#ff6666';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255,80,80,0.14)';
-              e.currentTarget.style.borderColor = 'rgba(255,80,80,0.38)';
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Label for empty slots */}
-      {!equipped && (
-        <div style={{
-          fontSize: '8px',
-          color: 'rgba(255,255,255,0.32)',
-          fontFamily: DESIGN.fonts.body,
-          whiteSpace: 'nowrap',
-        }}>
-          {slot.label}
-        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onUnequip(); }}
+          title="Remove"
+          style={{
+            position: 'absolute',
+            top: '-5px',
+            right: '-5px',
+            width: '14px',
+            height: '14px',
+            background: 'rgba(20,4,4,0.95)',
+            border: '1px solid rgba(255,80,80,0.45)',
+            color: '#ff6666',
+            fontSize: '7px',
+            cursor: 'pointer',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            lineHeight: 1,
+            zIndex: 20,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(160,20,20,0.95)';
+            e.currentTarget.style.borderColor = '#ff6666';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(20,4,4,0.95)';
+            e.currentTarget.style.borderColor = 'rgba(255,80,80,0.45)';
+          }}
+        >
+          ✕
+        </button>
       )}
     </div>
   );
 }
 
-// ─── Portrait canvas ──────────────────────────────────────────────────────────
-// Renders the base character image + one overlay per equipped slot, z-indexed.
-function PortraitCanvas({ characterClass, gender, equipment, transmog }) {
-  const [baseError, setBaseError] = useState(false);
-  const [overlayErrors, setOverlayErrors] = useState({});
+// ─── Silhouette canvas with body slots overlaid ───────────────────────────────
+// Portrait: 240 × 480px (SVG viewBox 220×440, scaled 1.09×)
+//
+// Slot positions are tuned to anatomical landmarks on the generated SVG silhouette.
+// SVG scale factor ≈ 1.09 (240/220). Key body centers in render-px:
+//   head   ≈ (120, 63)   chest ≈ (120, 195)  hands ≈ (23, 336) / (217, 336)
+//   thighs ≈ (120, 310)  feet  ≈ (120, 472 → clamped to 428 for 52px slot)
+const PORTRAIT_W = 240;
+const PORTRAIT_H = 480;
 
-  // Reset error state whenever class or gender switches
+const BODY_SLOTS = ['helm', 'chest', 'gloves', 'legs', 'boots'];
+
+const BODY_SLOT_POS = {
+  helm:   { top: '8%',  left: '50%',  tx: '-50%' },
+  chest:  { top: '35%', left: '50%',  tx: '-50%' },
+  gloves: { top: '55%', left: '72%',  tx: '0'    }, // right-arm area
+  legs:   { top: '61%', left: '50%',  tx: '-50%' },
+  boots:  { top: '85%', left: '50%',  tx: '-50%' },
+};
+
+// Subtle line connectors from body-slot corners to the slot edge, giving a
+// D4 inventory "wire" feel. These are pure CSS border lines from the absolute
+// slot position to the silhouette edge — we approximate with a small tail div.
+function SlotConnector({ side }) {
+  return (
+    <div style={{
+      position: 'absolute',
+      top: '50%',
+      [side === 'right' ? 'left' : 'right']: '100%',
+      width: '10px',
+      height: '1px',
+      background: 'rgba(212,175,55,0.25)',
+      transform: 'translateY(-50%)',
+      pointerEvents: 'none',
+    }} />
+  );
+}
+
+function Silhouette({ characterClass, gender, equipment, onSlotClick, onUnequip }) {
+  const [baseError, setBaseError] = useState(false);
+
   useEffect(() => {
     setBaseError(false);
-    setOverlayErrors({});
   }, [characterClass, gender]);
+
+  const classColor = CLASS_COLORS[characterClass] || '#888888';
+  const classRgb = hexRgb(classColor);
 
   const baseSrc = baseError
     ? generateBasePlaceholder(characterClass, gender)
     : getBaseCharacterPath(characterClass, gender);
 
-  const getOverlaySrc = (slotId) => {
-    const key = transmog?.[slotId] || 'base';
-    const errorKey = `${slotId}:${characterClass}:${key}`;
-    return overlayErrors[errorKey]
-      ? generateGearPlaceholder(slotId)
-      : getGearAppearancePath(characterClass, slotId, key);
-  };
-
-  const handleOverlayError = (slotId) => {
-    const key = transmog?.[slotId] || 'base';
-    const errorKey = `${slotId}:${characterClass}:${key}`;
-    setOverlayErrors((prev) => ({ ...prev, [errorKey]: true }));
-  };
-
-  const equippedSlots = SLOTS_BY_ZINDEX.filter((s) => equipment[s.id]);
+  const bodySlotDefs = GEAR_SLOTS.filter((s) => BODY_SLOTS.includes(s.id));
 
   return (
     <div style={{
       position: 'relative',
-      width: '220px',
-      height: '400px',
-      background: 'radial-gradient(ellipse at 50% 60%, rgba(30,24,40,0.95) 0%, rgba(8,6,8,0.98) 100%)',
-      border: '1px solid rgba(212,175,55,0.10)',
-      borderRadius: '4px',
-      overflow: 'hidden',
-      boxShadow: 'inset 0 0 40px rgba(0,0,0,0.5)',
+      width: `${PORTRAIT_W}px`,
+      height: `${PORTRAIT_H}px`,
+      flexShrink: 0,
     }}>
-      {/* Base character */}
+      {/* Atmospheric class-tinted glow */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: `radial-gradient(ellipse at 50% 38%, rgba(${classRgb},0.10) 0%, rgba(8,6,8,0.0) 65%)`,
+        borderRadius: '4px',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }} />
+
+      {/* Dark silhouette — brightness reduced to create inventory-screen look */}
       <img
         key={`base-${characterClass}-${gender}`}
         src={baseSrc}
-        alt={`${characterClass} ${gender}`}
+        alt={characterClass}
         onError={() => setBaseError(true)}
         style={{
           position: 'absolute',
@@ -211,86 +253,148 @@ function PortraitCanvas({ characterClass, gender, equipment, transmog }) {
           width: '100%',
           height: '100%',
           objectFit: 'contain',
+          objectPosition: 'center bottom',
           zIndex: 1,
+          filter: 'brightness(0.28) saturate(0.55)',
+          pointerEvents: 'none',
         }}
       />
 
-      {/* Gear overlays in z-index order */}
-      {equippedSlots.map((slot) => (
-        <img
-          key={`${slot.id}:${characterClass}:${transmog?.[slot.id] ?? 'base'}`}
-          src={getOverlaySrc(slot.id)}
-          alt={slot.label}
-          onError={() => handleOverlayError(slot.id)}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-            zIndex: SLOT_ZINDEX[slot.id] ?? 10,
-            pointerEvents: 'none',
-          }}
-        />
-      ))}
+      {/* Bottom vignette for depth */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '80px',
+        background: 'linear-gradient(to bottom, transparent, rgba(8,6,8,0.85))',
+        zIndex: 2,
+        pointerEvents: 'none',
+      }} />
 
-      {/* "No gear" hint when nothing is equipped */}
-      {equippedSlots.length === 0 && (
-        <div style={{
-          position: 'absolute',
-          bottom: '12px',
-          left: 0,
-          right: 0,
-          textAlign: 'center',
-          fontSize: '10px',
-          color: 'rgba(212,175,55,0.28)',
-          fontFamily: DESIGN.fonts.body,
-          letterSpacing: '0.5px',
-          pointerEvents: 'none',
-        }}>
-          No gear equipped
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Slot panel column ────────────────────────────────────────────────────────
-function SlotColumn({ slotIds, equipment, transmog, characterClass, onSlotClick, onUnequip, onTransmogChange, style }) {
-  const slots = GEAR_SLOTS.filter((s) => slotIds.includes(s.id));
-  const getRarityColor = (rarity) => RARITY_COLORS[rarity?.toLowerCase()] ?? RARITY_COLORS.common;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', ...style }}>
-      {slots.map((slot) => {
+      {/* Body gear slots — absolutely positioned over silhouette */}
+      {bodySlotDefs.map((slot) => {
+        const pos = BODY_SLOT_POS[slot.id];
         const equipped = equipment[slot.id];
+        const isOffCenter = pos.tx === '0'; // gloves — off to right
+
         return (
-          <SlotButton
+          <div
             key={slot.id}
-            slot={slot}
-            equipped={equipped}
-            rarityColor={equipped ? getRarityColor(equipped.rarity) : null}
-            onClick={() => onSlotClick(slot)}
-            onUnequip={(e) => { e.stopPropagation(); onUnequip(slot.id); }}
-            transmog={transmog?.[slot.id]}
-            characterClass={characterClass}
-            onTransmogChange={onTransmogChange}
-          />
+            style={{
+              position: 'absolute',
+              top: pos.top,
+              left: pos.left,
+              transform: pos.tx !== '0' ? `translateX(${pos.tx})` : undefined,
+              zIndex: 10,
+            }}
+          >
+            {/* Connector line toward silhouette center for off-center slots */}
+            {isOffCenter && (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                right: '100%',
+                width: '12px',
+                height: '1px',
+                background: 'rgba(212,175,55,0.2)',
+                transform: 'translateY(-50%)',
+                pointerEvents: 'none',
+              }} />
+            )}
+            <SlotIcon
+              slot={slot}
+              equipped={equipped}
+              onClick={() => onSlotClick(slot)}
+              onUnequip={() => onUnequip(slot.id)}
+              size={52}
+            />
+          </div>
         );
       })}
     </div>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Weapon column (left) ─────────────────────────────────────────────────────
+function WeaponColumn({ equipment, onSlotClick, onUnequip }) {
+  const slots = GEAR_SLOTS.filter((s) => ['mainhand', 'offhand'].includes(s.id));
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '10px',
+      paddingTop: '32px',
+    }}>
+      <div style={{
+        fontSize: '8px',
+        color: 'rgba(212,175,55,0.3)',
+        fontFamily: DESIGN.fonts.body,
+        textTransform: 'uppercase',
+        letterSpacing: '0.8px',
+        marginBottom: '2px',
+      }}>
+        Weapons
+      </div>
+      {slots.map((slot) => (
+        <SlotIcon
+          key={slot.id}
+          slot={slot}
+          equipped={equipment[slot.id]}
+          onClick={() => onSlotClick(slot)}
+          onUnequip={() => onUnequip(slot.id)}
+          size={58}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Jewelry column (right) ───────────────────────────────────────────────────
+function JewelryColumn({ equipment, onSlotClick, onUnequip }) {
+  const slots = GEAR_SLOTS.filter((s) => ['amulet', 'ring1', 'ring2'].includes(s.id));
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '10px',
+      paddingTop: '32px',
+    }}>
+      <div style={{
+        fontSize: '8px',
+        color: 'rgba(212,175,55,0.3)',
+        fontFamily: DESIGN.fonts.body,
+        textTransform: 'uppercase',
+        letterSpacing: '0.8px',
+        marginBottom: '2px',
+      }}>
+        Jewelry
+      </div>
+      {slots.map((slot) => (
+        <SlotIcon
+          key={slot.id}
+          slot={slot}
+          equipped={equipment[slot.id]}
+          onClick={() => onSlotClick(slot)}
+          onUnequip={() => onUnequip(slot.id)}
+          size={52}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Main PaperDoll component ─────────────────────────────────────────────────
 export default function PaperDoll({
   characterClass,
   gender = 'male',
   equipment,
-  transmog,
+  transmog,         // kept for API compat — transmog UI not rendered in this design
   onEquip,
   onUnequip,
-  onTransmogChange,
+  onTransmogChange, // kept for API compat
 }) {
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -308,23 +412,15 @@ export default function PaperDoll({
     }
   }, [selectedSlot, onEquip]);
 
-  const getRarityColor = (rarity) => {
-    const rarityKey = rarity?.toLowerCase().split(' ')[0] || 'common';
-    return RARITY_COLORS[rarityKey] || RARITY_COLORS.common;
-  };
+  const handleClose = useCallback(() => {
+    setShowSearch(false);
+    setSelectedSlot(null);
+  }, []);
 
-  const sharedColumnProps = {
-    equipment,
-    transmog,
-    characterClass,
-    onSlotClick: handleSlotClick,
-    onUnequip,
-    onTransmogChange,
-  };
+  const classColor = CLASS_COLORS[characterClass] || '#888888';
 
   return (
     <div>
-      {/* Section header */}
       <h2 style={{
         fontFamily: DESIGN.fonts.heading,
         fontSize: '18px',
@@ -336,105 +432,77 @@ export default function PaperDoll({
         Equipment
       </h2>
 
-      {/* Paper doll card */}
       <div style={{
         background: DESIGN.cardGradient,
         border: DESIGN.border,
         borderRadius: '4px',
-        padding: '20px 16px',
+        padding: '20px 12px 16px',
         marginBottom: '20px',
       }}>
-        {/* Top row: helm + amulet centred above portrait */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '12px' }}>
-          {TOP_SLOTS.map((id) => {
-            const slot = GEAR_SLOTS.find((s) => s.id === id);
-            const equipped = equipment[id];
-            return (
-              <SlotButton
-                key={id}
-                slot={slot}
-                equipped={equipped}
-                rarityColor={equipped ? getRarityColor(equipped.rarity) : null}
-                onClick={() => handleSlotClick(slot)}
-                onUnequip={(e) => { e.stopPropagation(); onUnequip(id); }}
-                transmog={transmog?.[id]}
-                characterClass={characterClass}
-                onTransmogChange={onTransmogChange}
-              />
-            );
-          })}
-        </div>
+        {/* 3-column: weapons | silhouette | jewelry */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          gap: '10px',
+        }}>
+          <WeaponColumn
+            equipment={equipment}
+            onSlotClick={handleSlotClick}
+            onUnequip={onUnequip}
+          />
 
-        {/* Middle row: left panel | portrait | right panel */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '16px' }}>
-          {/* Left column: mainhand, gloves, ring1 */}
-          <SlotColumn slotIds={LEFT_SLOTS} {...sharedColumnProps} style={{ paddingTop: '12px' }} />
-
-          {/* Portrait canvas */}
-          <PortraitCanvas
+          <Silhouette
             characterClass={characterClass}
             gender={gender}
             equipment={equipment}
-            transmog={transmog}
+            onSlotClick={handleSlotClick}
+            onUnequip={onUnequip}
           />
 
-          {/* Right column: offhand, chest, legs, ring2 */}
-          <SlotColumn slotIds={RIGHT_SLOTS} {...sharedColumnProps} style={{ paddingTop: '12px' }} />
+          <JewelryColumn
+            equipment={equipment}
+            onSlotClick={handleSlotClick}
+            onUnequip={onUnequip}
+          />
         </div>
 
-        {/* Bottom row: boots centred below portrait */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '12px' }}>
-          {BOTTOM_SLOTS.map((id) => {
-            const slot = GEAR_SLOTS.find((s) => s.id === id);
-            const equipped = equipment[id];
-            return (
-              <SlotButton
-                key={id}
-                slot={slot}
-                equipped={equipped}
-                rarityColor={equipped ? getRarityColor(equipped.rarity) : null}
-                onClick={() => handleSlotClick(slot)}
-                onUnequip={(e) => { e.stopPropagation(); onUnequip(id); }}
-                transmog={transmog?.[id]}
-                characterClass={characterClass}
-                onTransmogChange={onTransmogChange}
-              />
-            );
-          })}
+        {/* Class label beneath silhouette */}
+        <div style={{
+          textAlign: 'center',
+          marginTop: '10px',
+          fontSize: '10px',
+          color: `rgba(${hexRgb(classColor)}, 0.45)`,
+          fontFamily: DESIGN.fonts.heading,
+          textTransform: 'uppercase',
+          letterSpacing: '2.5px',
+        }}>
+          {characterClass}
         </div>
       </div>
 
       {/* Item search modal */}
       {showSearch && selectedSlot && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(8,6,8,0.85)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-        }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(8,6,8,0.86)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={handleClose}
+        >
           <ItemSearch
             slotType={selectedSlot.type}
             onSelect={handleItemSelect}
-            onClose={() => { setShowSearch(false); setSelectedSlot(null); }}
+            onClose={handleClose}
           />
         </div>
       )}
     </div>
   );
-}
-
-// ─── Utility ──────────────────────────────────────────────────────────────────
-// Converts a 6-char hex colour to an "r,g,b" string for use in rgba().
-function hexRgb(hex) {
-  if (!hex || hex.length < 6) return '212,175,55';
-  const h = hex.replace('#', '');
-  return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
-  ].join(',');
 }
