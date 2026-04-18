@@ -19,44 +19,62 @@ export default function BuildPlanner() {
   const [activeCharacter, setActiveCharacter] = useState(0);
   const [characters, setCharacters] = useState(DEFAULT_CHARACTERS);
   const [saveState, setSaveState] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+  const [userId, setUserId] = useState(null);
 
-  // Load all saved character slots from the DB on mount.
+  // Ensure we have a Supabase session (anonymous auth) then load saved builds.
   useEffect(() => {
-    console.log('[BUILD-SAVE] Mount: fetching saved builds from DB');
-    supabase
-      .from('builds')
-      .select('slot, name, class, gender, equipment, transmog, stats')
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('[BUILD-SAVE] Load error — table missing or RLS blocking SELECT:', {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-          });
+    async function initAndLoad() {
+      // Reuse existing session or create an anonymous one.
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.log('[BUILD-SAVE] No session — signing in anonymously');
+        const { data, error: signInError } = await supabase.auth.signInAnonymously();
+        if (signInError) {
+          console.error('[BUILD-SAVE] Anonymous sign-in failed:', signInError);
           return;
         }
-        if (!data?.length) {
-          console.log('[BUILD-SAVE] Load: no saved builds found (empty table or RLS filtered all rows)');
-          return;
-        }
-        console.log('[BUILD-SAVE] Load: received', data.length, 'builds from DB:', data.map(r => ({ slot: r.slot, name: r.name, class: r.class })));
-        setCharacters((prev) => {
-          const next = [...prev];
-          data.forEach((row) => {
-            next[row.slot] = {
-              id: row.slot,
-              name: row.name,
-              class: row.class,
-              gender: row.gender,
-              equipment: row.equipment ?? {},
-              transmog: row.transmog ?? {},
-              stats: row.stats ?? {},
-            };
-          });
-          return next;
+        session = data.session;
+      }
+      const uid = session?.user?.id ?? null;
+      console.log('[BUILD-SAVE] Session ready — user_id:', uid);
+      setUserId(uid);
+
+      if (!uid) return;
+
+      console.log('[BUILD-SAVE] Fetching saved builds for user');
+      const { data, error } = await supabase
+        .from('user_builds')
+        .select('slot, name, character_class, gender, equipment, transmog, stats')
+        .eq('user_id', uid);
+
+      if (error) {
+        console.error('[BUILD-SAVE] Load error — table missing, column mismatch, or RLS blocking SELECT:', {
+          code: error.code, message: error.message, details: error.details, hint: error.hint,
         });
+        return;
+      }
+      if (!data?.length) {
+        console.log('[BUILD-SAVE] Load: no saved builds found for this user');
+        return;
+      }
+      console.log('[BUILD-SAVE] Load: received', data.length, 'builds:', data.map(r => ({ slot: r.slot, name: r.name })));
+      setCharacters((prev) => {
+        const next = [...prev];
+        data.forEach((row) => {
+          next[row.slot] = {
+            id: row.slot,
+            name: row.name,
+            class: row.character_class,
+            gender: row.gender,
+            equipment: row.equipment ?? {},
+            transmog: row.transmog ?? {},
+            stats: row.stats ?? {},
+          };
+        });
+        return next;
       });
+    }
+    initAndLoad();
   }, []);
 
   const currentChar = characters[activeCharacter];
@@ -107,23 +125,28 @@ export default function BuildPlanner() {
   };
 
   const handleSave = async () => {
+    if (!userId) {
+      console.error('[BUILD-SAVE] Save blocked — no user session yet');
+      return;
+    }
     setSaveState('saving');
 
-    const anonKeyPresent = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     console.log('[BUILD-SAVE] Save triggered:', {
+      table: 'user_builds',
+      user_id: userId,
       slot: activeCharacter,
       name: currentChar.name,
-      class: currentChar.class,
+      character_class: currentChar.class,
       gender: currentChar.gender,
       equipmentSlots: Object.keys(currentChar.equipment).length,
-      authMode: anonKeyPresent ? 'anon-key (no user session)' : 'NO KEY — client will fail',
     });
 
     try {
       const payload = {
+        user_id: userId,
         slot: activeCharacter,
         name: currentChar.name,
-        class: currentChar.class,
+        character_class: currentChar.class,
         gender: currentChar.gender,
         equipment: currentChar.equipment,
         transmog: currentChar.transmog,
@@ -131,11 +154,11 @@ export default function BuildPlanner() {
         updated_at: new Date().toISOString(),
       };
 
-      console.log('[BUILD-SAVE] Calling supabase.from("builds").upsert() with payload:', payload);
+      console.log('[BUILD-SAVE] Calling supabase.from("user_builds").upsert()');
 
       const { data, error } = await supabase
-        .from('builds')
-        .upsert(payload, { onConflict: 'slot' })
+        .from('user_builds')
+        .upsert(payload, { onConflict: 'user_id,slot' })
         .select();
 
       if (error) {
@@ -148,7 +171,7 @@ export default function BuildPlanner() {
         throw error;
       }
 
-      console.log('[BUILD-SAVE] Upsert success — rows affected:', data?.length ?? 0, data);
+      console.log('[BUILD-SAVE] Upsert success — rows affected:', data?.length ?? 0);
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2500);
     } catch (err) {
