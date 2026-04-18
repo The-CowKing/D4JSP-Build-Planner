@@ -3,6 +3,7 @@ import PaperDoll from './PaperDoll';
 import StatCalculator from './StatCalculator';
 import { CLASSES } from '../data/class-data';
 import { DESIGN } from '../lib/constants';
+import { supabase } from '../lib/supabase';
 
 export default function BuildPlanner() {
   const [activeCharacter, setActiveCharacter] = useState(0);
@@ -17,6 +18,7 @@ export default function BuildPlanner() {
       stats: {},
     }))
   );
+  const [saveState, setSaveState] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
 
   const currentChar = characters[activeCharacter];
 
@@ -24,10 +26,7 @@ export default function BuildPlanner() {
     const updated = [...characters];
     updated[activeCharacter] = {
       ...updated[activeCharacter],
-      equipment: {
-        ...updated[activeCharacter].equipment,
-        [slotId]: item,
-      },
+      equipment: { ...updated[activeCharacter].equipment, [slotId]: item },
     };
     setCharacters(updated);
   };
@@ -46,10 +45,7 @@ export default function BuildPlanner() {
 
   const handleClassChange = (classId) => {
     const updated = [...characters];
-    updated[activeCharacter] = {
-      ...updated[activeCharacter],
-      class: classId,
-    };
+    updated[activeCharacter] = { ...updated[activeCharacter], class: classId };
     setCharacters(updated);
   };
 
@@ -71,22 +67,90 @@ export default function BuildPlanner() {
     setCharacters(updated);
   };
 
+  const handleSave = async () => {
+    setSaveState('saving');
+    try {
+      const payload = {
+        slot: activeCharacter,
+        name: currentChar.name,
+        class: currentChar.class,
+        gender: currentChar.gender,
+        equipment: currentChar.equipment,
+        transmog: currentChar.transmog,
+        stats: currentChar.stats,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('builds')
+        .upsert(payload, { onConflict: 'slot' });
+
+      if (error) throw error;
+
+      setSaveState('saved');
+      setTimeout(() => setSaveState('idle'), 2500);
+    } catch (err) {
+      console.error('Save failed:', err);
+      setSaveState('error');
+      setTimeout(() => setSaveState('idle'), 3000);
+    }
+  };
+
+  const saveLabel = {
+    idle:   'Save Build',
+    saving: 'Saving…',
+    saved:  'Saved!',
+    error:  'Save Failed',
+  }[saveState];
+
+  const saveBg = {
+    idle:   DESIGN.gold,
+    saving: 'rgba(212,175,55,0.5)',
+    saved:  '#4caf50',
+    error:  '#e53935',
+  }[saveState];
+
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ marginBottom: '30px' }}>
-        <h1 style={{
-          fontFamily: DESIGN.fonts.heading,
-          fontSize: '36px',
-          color: DESIGN.gold,
-          textShadow: '0 0 20px rgba(212,175,55,0.3)',
-          marginBottom: '10px',
-        }}>
-          Build Planner
-        </h1>
-        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>
-          Optimize your Diablo 4 character gear and stats
-        </p>
+      <div style={{ marginBottom: '30px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div>
+          <h1 style={{
+            fontFamily: DESIGN.fonts.heading,
+            fontSize: '36px',
+            color: DESIGN.gold,
+            textShadow: '0 0 20px rgba(212,175,55,0.3)',
+            marginBottom: '10px',
+          }}>
+            Build Planner
+          </h1>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px' }}>
+            Optimize your Diablo 4 character gear and stats
+          </p>
+        </div>
+
+        {/* Save button */}
+        <button
+          onClick={handleSave}
+          disabled={saveState === 'saving'}
+          style={{
+            padding: '10px 22px',
+            background: saveBg,
+            border: 'none',
+            color: '#0a0a0a',
+            fontFamily: DESIGN.fonts.heading,
+            fontSize: '13px',
+            fontWeight: 'bold',
+            letterSpacing: '1px',
+            textTransform: 'uppercase',
+            cursor: saveState === 'saving' ? 'wait' : 'pointer',
+            borderRadius: '2px',
+            transition: 'background 0.2s ease',
+            flexShrink: 0,
+          }}
+        >
+          {saveLabel}
+        </button>
       </div>
 
       {/* Character Tabs */}
@@ -235,7 +299,6 @@ export default function BuildPlanner() {
         gap: '30px',
         marginBottom: '30px',
       }}>
-        {/* Paper Doll */}
         <div>
           <PaperDoll
             characterClass={currentChar.class}
@@ -247,8 +310,6 @@ export default function BuildPlanner() {
             onTransmogChange={handleTransmogChange}
           />
         </div>
-
-        {/* Stat Calculator */}
         <div>
           <StatCalculator
             equipment={currentChar.equipment}
