@@ -6,24 +6,38 @@ This file is identical across all 4 trade-system repos. Only the **You are in** 
 
 ---
 
-## You are in: `D4JSP-Build-Planner` — Damage calc + paper-doll, mounted at `/builder`
+## You are in: `D4JSP` — Main Core / Trade Backend
 
-**Static-export Next.js app** consumed inside the trade site at `https://trade.d4jsp.org/builder/*`. Tier-gated by `admin_permissions.d4_build_slots`. Persistence handled by D4JSP's `/api/save-build` endpoint; this app has no own API routes.
+**The backend for everything.** Every API route in the trade system lives here; every other app calls back to these routes.
 
-- **Path:** `C:\Users\Owner\D4JSP-Build-Planner`
-- **Stack:** Next.js 14, React 18.2, Supabase JS 2.38, framer-motion 10. `output: 'export'`, `basePath: '/builder'`. Older versions than D4JSP — finding BP-1 (bump to 15 when there's a slow week).
-- **Deployed:** Static. `next build` → `out/`, copied to KVM 4 nginx root under `/builder`.
-- **Key entry files:** `pages/index.js` (renders `<BuildPlanner/>`), `components/{BuildPlanner,ItemSearch,PaperDoll,StatCalculator,TransmogDropdown}.js`, `data/{class-data,gear-slots}.js`, `lib/{supabase,constants,damage-calc,paperdoll-assets}.js`. Migrations: `migrations/001_d4_cosmetic_appearances.sql`, `migrations/002_build_planner_permissions.sql`.
-- **Sister repos** (identical wiki, repo-specific "You are in"): `C:\Users\Owner\D4JSP` (trade backend — owns the `/api/save-build` endpoint and the `admin_permissions` catalog this app reads), `C:\Users\Owner\D4JSP-Admin` (admin console), `C:\Users\Owner\D4JSP-Map` (iframed in profile).
-- **Going-here-for-this-work hints:**
-  - Tier gating → `admin_permissions.d4_build_slots`. Per-tier defaults defined in this repo's `migrations/002_build_planner_permissions.sql` — **the canonical example of the catalog protocol; copy this pattern when wiring new permissions.**
-  - Build save → `POST /api/save-build` (D4JSP); this repo just collects the payload via `lib/supabase.js:supabaseAuthed(token)`.
-  - Stack drift → Next 14 vs trade app's Next 15. Bump when a shared dep bites.
-- **NOT in scope:** WordPress federation at `C:\Users\Owner\D4JSP-WP`.
+- **Path:** `C:\Users\Owner\D4JSP`
+- **Stack:** Next.js 15.3.3 + custom `server.js`, Supabase JS 2.100, ~22k LOC components, **92 API routes**
+- **Deployed:** KVM 4 `/opt/d4jsp`, PM2 `d4jsp` cluster, port 3000 → `https://trade.d4jsp.org`
+- **Key entry files:** [`components/AppShell.js`](./components/AppShell.js) · [`components/HomeView.js`](./components/HomeView.js) · [`lib/supabase.js`](./lib/supabase.js) · [`lib/auth-context.js`](./lib/auth-context.js) · [`lib/triggerEngine.js`](./lib/triggerEngine.js) · [`lib/sysConfig.js`](./lib/sysConfig.js)
+- **Sister repos** (each has identical start.md with their own "You are in" block): `C:\Users\Owner\D4JSP-Admin` (admin console), `C:\Users\Owner\D4JSP-Build-Planner` (`/builder`), `C:\Users\Owner\D4JSP-Map` (iframed in profile).
+- **NOT in scope:** WordPress federation at `C:\Users\Owner\D4JSP-WP` — *touch it only when you need to.*
 
 ---
 
 # § Protocols (read these first — they're the rules of engagement)
+
+## ⚠ HARD RULE: Verified-working flip workflow — NEVER auto-flip
+
+The "verified working" / "wired" / "green-lit" / "confirmed" switch on any catalog row (quests, triggers, specials, skills, badges, subscription tiers, fg_packages, etc.) is **flipped ONLY AFTER Adam confirms the feature works in production**.
+
+- Bots NEVER flip this switch based on internal/programmatic verification alone — DB rows reading correctly, RPC firing, logs looking clean are all NECESSARY but NOT SUFFICIENT. The flip waits for Adam.
+- This applies to ALL catalogs that have any verified / wired / connected / green-light / confirmed state. The existing badges in admin (the "NOT WIRED" / connected dots / verified flags shown in screenshots) are the SAME flag — there is exactly one source of truth per catalog row, do not invent new ones.
+- The static `wired: 'red'/'yellow'/'green'` constants in `components/AdminView.js` (`QUEST_WIRED`, `REQUIREMENT_TYPES`, `REWARD_TYPES`, etc.) describe codebase capabilities — those follow the same rule: do not flip from red to green just because you shipped a fix. Wait for Adam to confirm the feature works in prod, then flip.
+
+**Workflow:**
+1. Bot ships fix → bot deploys to KVM 4 → bot reports "wired correctly per DB inspection; awaiting prod confirmation."
+2. Adam tests in prod.
+3. Adam confirms ("the spawn quest pays out FG now" / "kill quest works" / "reward landed").
+4. **THEN** bot flips the switch — small separate commit (`verify(<scope>): flip switch on <id> after Adam's prod confirmation`). Push.
+
+**Never bundle the flip with the fix.** Two commits — fix first, flip after confirmation. The audit trail must show that the flip was a deliberate post-confirmation action, not an automatic side-effect.
+
+If you reach a verification step and are tempted to flip without explicit Adam confirmation, STOP and report instead. Adam: "I'll confirm it u flip em once we get to testing."
 
 ## Style + communication
 
