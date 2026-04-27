@@ -6,16 +6,18 @@ This file is identical across all 4 trade-system repos. Only the **You are in** 
 
 ---
 
-## You are in: `D4JSP` — Main Core / Trade Backend
+## You are in: `D4JSP-Build-Planner` — `/builder` static export
 
-**The backend for everything.** Every API route in the trade system lives here; every other app calls back to these routes.
+**Master entrypoint:** for cross-app context (modular spine, escrow protection, vault discipline, Stripe contract), read the **main `D4JSP` repo's `start.md` at `C:\Users\Owner\D4JSP\start.md`**. That is the front door for the whole system. This block is build-planner-specific.
 
-- **Path:** `C:\Users\Owner\D4JSP`
-- **Stack:** Next.js 15.3.3 + custom `server.js`, Supabase JS 2.100, ~22k LOC components, **92 API routes**
-- **Deployed:** KVM 4 `/opt/d4jsp`, PM2 `d4jsp` cluster, port 3000 → `https://trade.d4jsp.org`
-- **Key entry files:** [`components/AppShell.js`](./components/AppShell.js) · [`components/HomeView.js`](./components/HomeView.js) · [`lib/supabase.js`](./lib/supabase.js) · [`lib/auth-context.js`](./lib/auth-context.js) · [`lib/triggerEngine.js`](./lib/triggerEngine.js) · [`lib/sysConfig.js`](./lib/sysConfig.js)
-- **Sister repos** (each has identical start.md with their own "You are in" block): `C:\Users\Owner\D4JSP-Admin` (admin console), `C:\Users\Owner\D4JSP-Build-Planner` (`/builder`), `C:\Users\Owner\D4JSP-Map` (iframed in profile).
-- **NOT in scope:** WordPress federation at `C:\Users\Owner\D4JSP-WP` — *touch it only when you need to.*
+- **Path:** `C:\Users\Owner\D4JSP-Build-Planner`
+- **Stack:** Next.js 14, **static export**, basePath `/builder`. Pure static — no runtime, no API routes.
+- **Deployed:** static, mounted on KVM 4 nginx at `https://trade.d4jsp.org/builder/*`. ALSO embedded inside the main app's Profile → Builds tab.
+- **Cross-domain SSO:** `lib/supabase.js` mirrors main repo's `.d4jsp.org` chunked cookie storage (post-#117). Login on any subdomain propagates here.
+- **Save flow:** `/api/builds/{save,list,delete}` (post-047) lives in MAIN D4JSP repo. This repo is read-only-ish — it just calls those endpoints. Migration 047 added `slot_number / build_data jsonb / is_pinned` to `user_builds`; partial unique index on `(user_id, slot_number) WHERE slot_number IS NOT NULL` for the 3 pinned quick-slots; legacy scalar columns backfilled into `build_data`.
+- **Repo-specific docs:** [`./docs/conventions.md`](./docs/conventions.md) — wowhead scrape strategy + OCR cache flow · [`./docs/integrations.md`](./docs/integrations.md) — wowhead, OCR cluster, OCR auto-absorb gate
+- **GitHub:** standard CowKing org repo.
+- **Sister repos:** `C:\Users\Owner\D4JSP` (main core, KVM 4), `C:\Users\Owner\D4JSP-Admin` (admin console, KVM 2), `C:\Users\Owner\D4JSP-Map` (iframed in profile).
 
 ---
 
@@ -428,10 +430,4 @@ For the historical full audit snapshot: [`docs/audits/2026-04-26.md`](./docs/aud
 
 # § Conventions / agent reference
 
-- [`docs/conventions.md`](./docs/conventions.md) — full set of rules, doc-debt protocol details, doc-relevant globs
-- [`docs/glossary.md`](./docs/glossary.md) — extended glossary (this file's glossary is the short version)
-- [`CLAUDE.md`](./CLAUDE.md) — auto-loaded by Claude Code on session start; trimmed pointer back to this file
-
----
-
-*This file is the front door. Everything else is reachable from here. If you create a new doc, link it from here. If you delete a doc, delete the link too. The wiki is only useful if it stays consistent.*
+- [`docs/c

@@ -2,6 +2,67 @@
 
 Long-form version of the protocols section in [`../start.md`](../start.md). Both stay in sync; if they drift, start.md wins for the rules and this doc gets the rationale.
 
+## D4JSP-Build-Planner — repo-specific notes (2026-04-27)
+
+This repo is the standalone Build Planner (`/builder` static export). It mounts at `https://trade.d4jsp.org/builder/*` via KVM 4 nginx, AND embeds inside the main app at the Profile → Builds tab.
+
+> **For the master entrypoint covering all 4 sister apps, read the main `D4JSP` repo's [`../start.md`](../start.md).** Cross-app architecture, modular spine, escrow protection layer, vault discipline — all live there. This doc is for build-planner-specific concerns only.
+
+**Stack:** Next.js 14, static export, basePath `/builder`. No own runtime — pure static HTML+JS served by nginx.
+
+**Cross-domain SSO:** `D4JSP-Build-Planner/lib/supabase.js` uses the same `.d4jsp.org` chunked cookie storage as the main repo. Login on any subdomain propagates here. Pre-#117 the builder had its own session storage and users had to log in twice — fixed.
+
+**Save flow:** `/api/save-build` (legacy) and `/api/builds/save` (new, post-047). Migration 047 added `slot_number / build_data jsonb / is_pinned` to `user_builds`. The new endpoint uses bearer-token verify via `adminDb.auth.getUser`, then service-role write. Endpoint set `pages/api/builds/{save,list,delete}.js` lives in MAIN D4JSP repo (not here) — this repo is static, no API routes.
+
+**UI patterns:** Save▾ dropdown (Slot 1/2/3 + "+ New named save…") + Load▾ dropdown (per-row Delete) + "Log in to save" CTA when no session.
+
+## Wowhead tooltip scraping strategy (2026-04-27 status)
+
+The build planner uses item tooltip data sourced from `wowhead_tooltips` (a cache table in the main DB). Scraping strategy nuances:
+
+- **Per-item endpoint works** — Wowhead's per-item tooltip endpoint returns structured data for known items.
+- **Index pages are blocked** — bulk scraping via index pages gets rate-limited / blocked.
+- **`wowhead_tooltips` cache table** stores parsed tooltip results. Schema (post-052/064):
+  - `wowhead_id`, `name`, `slug`, `rarity`, `item_type`, `quality`, `tooltip_html`, `icon_url`
+  - `is_tradeable boolean` (migration 052)
+  - `source text` (migration 064): `'wowhead'` / `'user_submitted'` / `'admin'` / `'scraper_v2'` / `'d4armory'` / `'maxroll'`
+  - `submitted_by uuid`, `reviewed boolean`, `reviewed_by uuid`, `reviewed_at timestamptz`
+
+- **Scraper v2 strategy** — queued for next pass. Per-item endpoints + sitemap discovery. Existing scraper handles known items; new patch items need either v2 or the OCR auto-absorb fallback.
+
+## OCR cluster (KVM 2)
+
+The OCR cluster lives on KVM 2 (Hostinger VPS `187.124.239.213`). RapidOCR (PaddleOCR family) running on systemd `d4jsp-ocr.service`, uvicorn 3 workers. **Internal port: 8000.** Public port: 9000 via nginx. Earlier env had it misconfigured to 9000 → 9000 (causing dead route); fixed to 9000 → 8000.
+
+The build planner doesn't directly call OCR — that lives in the main app's sell pipeline. Build planner reads tooltip data already parsed and cached.
+
+## OCR auto-absorb fallback gate
+
+**Knob:** `system_config.ai.auto_absorb_unknown_items` (default `false`).
+
+When ON during patch windows: OCR creates a `wowhead_tooltips` row with `source='user_submitted'`, `reviewed=false` IF:
+1. Tooltip parses to D4 stat structure cleanly.
+2. Rarity is Unique / Legendary / Ancestral.
+3. User has `email_confirmed_at IS NOT NULL` AND (`positive_reviews >= 3` OR `rank_level >= 10`).
+
+Admin reviews + approves in `/admin-panel → AI Identifications`. Default OFF prevents catalog pollution. Adam flips ON during the brief window after a D4 patch where new items show up before the catalog catches up — then flips OFF once the scraper / manual entry catches up.
+
+## Tooltip cache flow
+
+```
+Build Planner / sell pipeline displays an item
+  ↓
+Lookup wowhead_id in wowhead_tooltips
+  ↓
+Hit → render cached tooltip_html
+Miss + reviewed_only=true → fallback to placeholder
+Miss + reviewed_only=false → fallback to placeholder OR trigger scrape
+```
+
+Scrape calls run server-side on the main app. Build planner is a read-only consumer.
+
+
+
 ## ⚠ MAIN DIRECTIVE — Bot owns the database. Code + migration atomic.
 
 Adam (verbatim): *"u always do supa base ur in charge of back end"* · *"u update the db when the update that requires it goes thru"* · *"make it main directive"* · *"no wonder nothing ever fucking works"* (re: deferring migrations to Adam).
