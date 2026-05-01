@@ -9,6 +9,25 @@ import {
 } from '../lib/paperdoll-assets';
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
+// Tracks a CSS media query so we can shrink the paper-doll on narrow viewports.
+// Returns false during SSR to keep hydration matched to the desktop default.
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(query);
+    const handler = (e) => setMatches(e.matches);
+    setMatches(mq.matches);
+    if (mq.addEventListener) mq.addEventListener('change', handler);
+    else mq.addListener(handler);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', handler);
+      else mq.removeListener(handler);
+    };
+  }, [query]);
+  return matches;
+}
+
 function hexRgb(hex) {
   if (!hex || hex.length < 6) return '212,175,55';
   const h = hex.replace('#', '');
@@ -208,7 +227,16 @@ function SlotConnector({ side }) {
   );
 }
 
-function Silhouette({ characterClass, gender, equipment, onSlotClick, onUnequip }) {
+function Silhouette({
+  characterClass,
+  gender,
+  equipment,
+  onSlotClick,
+  onUnequip,
+  width = PORTRAIT_W,
+  height = PORTRAIT_H,
+  bodySlotSize = 52,
+}) {
   const [baseError, setBaseError] = useState(false);
 
   useEffect(() => {
@@ -227,8 +255,8 @@ function Silhouette({ characterClass, gender, equipment, onSlotClick, onUnequip 
   return (
     <div style={{
       position: 'relative',
-      width: `${PORTRAIT_W}px`,
-      height: `${PORTRAIT_H}px`,
+      width: `${width}px`,
+      height: `${height}px`,
       flexShrink: 0,
     }}>
       {/* Atmospheric class-tinted glow */}
@@ -307,7 +335,7 @@ function Silhouette({ characterClass, gender, equipment, onSlotClick, onUnequip 
               equipped={equipped}
               onClick={() => onSlotClick(slot)}
               onUnequip={() => onUnequip(slot.id)}
-              size={52}
+              size={bodySlotSize}
             />
           </div>
         );
@@ -317,14 +345,14 @@ function Silhouette({ characterClass, gender, equipment, onSlotClick, onUnequip 
 }
 
 // ─── Weapon column (left) ─────────────────────────────────────────────────────
-function WeaponColumn({ equipment, onSlotClick, onUnequip }) {
+function WeaponColumn({ equipment, onSlotClick, onUnequip, slotSize = 58, gap = 10 }) {
   const slots = GEAR_SLOTS.filter((s) => ['mainhand', 'offhand'].includes(s.id));
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      gap: '10px',
+      gap: `${gap}px`,
       paddingTop: '32px',
     }}>
       <div style={{
@@ -344,7 +372,7 @@ function WeaponColumn({ equipment, onSlotClick, onUnequip }) {
           equipped={equipment[slot.id]}
           onClick={() => onSlotClick(slot)}
           onUnequip={() => onUnequip(slot.id)}
-          size={58}
+          size={slotSize}
         />
       ))}
     </div>
@@ -352,14 +380,14 @@ function WeaponColumn({ equipment, onSlotClick, onUnequip }) {
 }
 
 // ─── Jewelry column (right) ───────────────────────────────────────────────────
-function JewelryColumn({ equipment, onSlotClick, onUnequip }) {
+function JewelryColumn({ equipment, onSlotClick, onUnequip, slotSize = 52, gap = 10 }) {
   const slots = GEAR_SLOTS.filter((s) => ['amulet', 'ring1', 'ring2'].includes(s.id));
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      gap: '10px',
+      gap: `${gap}px`,
       paddingTop: '32px',
     }}>
       <div style={{
@@ -379,7 +407,7 @@ function JewelryColumn({ equipment, onSlotClick, onUnequip }) {
           equipped={equipment[slot.id]}
           onClick={() => onSlotClick(slot)}
           onUnequip={() => onUnequip(slot.id)}
-          size={52}
+          size={slotSize}
         />
       ))}
     </div>
@@ -398,6 +426,20 @@ export default function PaperDoll({
 }) {
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
+
+  // Compact (mobile) mode: shrink portrait + slot sizes so the
+  // 3-column weapons | silhouette | jewelry layout fits in narrow viewports
+  // without clipping the right column off-screen.
+  // Desktop minimum width was ~394px (240 portrait + 58+52 slots + 10+10 gap +
+  // 24 padding). Compact: ~290px (180 + 44+40 + 6+6 + 24).
+  const isCompact = useMediaQuery('(max-width: 480px)');
+  const portraitW    = isCompact ? 180 : PORTRAIT_W;
+  const portraitH    = isCompact ? 360 : PORTRAIT_H;
+  const weaponSize   = isCompact ? 44  : 58;
+  const jewelrySize  = isCompact ? 40  : 52;
+  const bodySlotSize = isCompact ? 40  : 52;
+  const colGap       = isCompact ? 6   : 10;
+  const colVGap      = isCompact ? 8   : 10;
 
   const handleSlotClick = useCallback((slot) => {
     setSelectedSlot(slot);
@@ -436,20 +478,24 @@ export default function PaperDoll({
         background: DESIGN.cardGradient,
         border: DESIGN.border,
         borderRadius: '4px',
-        padding: '20px 12px 16px',
+        padding: isCompact ? '16px 6px 12px' : '20px 12px 16px',
         marginBottom: '20px',
+        maxWidth: '100%',
+        overflow: 'hidden',
       }}>
         {/* 3-column: weapons | silhouette | jewelry */}
         <div style={{
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'center',
-          gap: '10px',
+          gap: `${colGap}px`,
         }}>
           <WeaponColumn
             equipment={equipment}
             onSlotClick={handleSlotClick}
             onUnequip={onUnequip}
+            slotSize={weaponSize}
+            gap={colVGap}
           />
 
           <Silhouette
@@ -458,12 +504,17 @@ export default function PaperDoll({
             equipment={equipment}
             onSlotClick={handleSlotClick}
             onUnequip={onUnequip}
+            width={portraitW}
+            height={portraitH}
+            bodySlotSize={bodySlotSize}
           />
 
           <JewelryColumn
             equipment={equipment}
             onSlotClick={handleSlotClick}
             onUnequip={onUnequip}
+            slotSize={jewelrySize}
+            gap={colVGap}
           />
         </div>
 

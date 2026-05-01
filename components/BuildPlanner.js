@@ -232,29 +232,51 @@ export default function BuildPlanner({ permissions = {} }) {
   const handleNotifyChange = (val) =>
     updateChar((c) => ({ ...c, notifyTrade: val }));
 
+  // 2026-04-28 (builder save fix): the prior handler wrote to a non-existent
+  // table 'builds' with the wrong column names and no user_id. The real
+  // table is `user_builds` (migration 047) with: user_id, slot_number, name,
+  // character_class, equipment, build_data jsonb, is_pinned. RLS-gated so
+  // user_id MUST equal auth.uid(). Per agent-outputs/investigations/builder_save.md.
   const handleSave = async () => {
     setSaveState('saving');
     try {
-      const payload = {
-        slot: activeCharacter,
-        name: currentChar.name,
-        class: currentChar.class,
-        gender: currentChar.gender,
-        equipment: currentChar.equipment,
-        transmog: currentChar.transmog,
-        stats: currentChar.stats,
-        notify_trade: canNotify && currentChar.notifyTrade,
-        updated_at: new Date().toISOString(),
-      };
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Sign in to save builds');
 
       const { error } = await supabase
-        .from('builds')
-        .upsert(payload, { onConflict: 'slot' });
+        .from('user_builds')
+        .upsert({
+          user_id: user.id,
+          slot_number: activeCharacter,
+          name: currentChar.name,
+          character_class: currentChar.class,
+          equipment: currentChar.equipment,
+          build_data: {
+            class: currentChar.class,
+            gender: currentChar.gender,
+            equipment: currentChar.equipment,
+            transmog: currentChar.transmog,
+            stats: currentChar.stats,
+            notify_trade: canNotify && currentChar.notifyTrade,
+          },
+          is_pinned: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,slot_number' });
 
       if (error) throw error;
 
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2500);
+
+      // 2026-04-28: notify any embedding parent (Map iframe) that builds
+      // changed, so the cache-invalidation listener there can refetch.
+      // Safe in standalone use too — postMessage to non-embedded window.parent
+      // === window is a no-op.
+      try {
+        if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'd4jsp:build-saved', userId: user.id }, '*');
+        }
+      } catch (_) { /* postMessage failure is non-fatal */ }
     } catch (err) {
       console.error('Save failed:', err);
       setSaveState('error');
@@ -480,14 +502,18 @@ export default function BuildPlanner({ permissions = {} }) {
         </div>
       </div>
 
-      {/* Main Content Grid */}
+      {/* Main Content Grid — auto-stacks to single column on viewports
+          where each column would be < 380px (i.e. < ~790px viewport).
+          Fixes mobile overflow where the 1fr/1fr split squeezed PaperDoll
+          (intrinsic ~394px wide) into ~150px columns and clipped slots
+          off the right edge. */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '30px',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))',
+        gap: '20px',
         marginBottom: '30px',
       }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <PaperDoll
             characterClass={currentChar.class}
             gender={currentChar.gender}
@@ -498,7 +524,7 @@ export default function BuildPlanner({ permissions = {} }) {
             onTransmogChange={handleTransmogChange}
           />
         </div>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <StatCalculator
             equipment={currentChar.equipment}
             characterClass={currentChar.class}
