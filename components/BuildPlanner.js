@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PaperDoll from './PaperDoll';
 import StatCalculator from './StatCalculator';
 import { CLASSES } from '../data/class-data';
@@ -232,6 +232,88 @@ export default function BuildPlanner({ permissions = {} }) {
   const handleNotifyChange = (val) =>
     updateChar((c) => ({ ...c, notifyTrade: val }));
 
+  // 2026-05-02 (Adam: WP build-guide "Add to Builder" button). The trade-app
+  // AppShell receives ?load_build=<slug>, calls /api/builder/save-from-guide
+  // which inserts into user_builds, then redirects here as
+  // /builder/?load=<row_id>&slot=<N>. We fetch that row by id (RLS-gated:
+  // user must own it), overwrite the local slot N state with its contents,
+  // and switch the active tab to N. ?cap=1 (alone) signals 5-cap reached —
+  // surface a one-time toast. Params are stripped after read so refresh
+  // doesn't re-fire the load.
+  const [loadToast, setLoadToast] = useState(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const loadId = params.get('load');
+    const slotStr = params.get('slot');
+    const cap = params.get('cap');
+    const stripParams = () => {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('load');
+        url.searchParams.delete('slot');
+        url.searchParams.delete('cap');
+        window.history.replaceState({}, '', url.pathname + (url.search || ''));
+      } catch (_) {}
+    };
+    if (cap === '1' && !loadId) {
+      setLoadToast({ type: 'cap', message: "You're at the 5-build limit. Clear a slot before adding more." });
+      setTimeout(() => setLoadToast(null), 5000);
+      stripParams();
+      return;
+    }
+    if (!loadId) return;
+    const slotIdx = Math.max(0, Math.min(4, parseInt(slotStr, 10) || 0));
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setLoadToast({ type: 'err', message: 'Sign in to load builds' });
+          setTimeout(() => setLoadToast(null), 4000);
+          stripParams();
+          return;
+        }
+        const { data: row, error } = await supabase
+          .from('user_builds')
+          .select('id, slot, name, character_class, equipment, build_data')
+          .eq('id', loadId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (error || !row) {
+          setLoadToast({ type: 'err', message: 'Build not found' });
+          setTimeout(() => setLoadToast(null), 4000);
+          stripParams();
+          return;
+        }
+        const targetSlot = (typeof row.slot === 'number') ? row.slot : slotIdx;
+        const bd = row.build_data || {};
+        setCharacters((prev) => {
+          const next = [...prev];
+          next[targetSlot] = {
+            id: targetSlot,
+            name: row.name || `Character ${targetSlot + 1}`,
+            class: row.character_class || bd.class || CLASSES[0].id,
+            gender: bd.gender || 'male',
+            equipment: row.equipment || bd.equipment || {},
+            transmog: bd.transmog || {},
+            stats: bd.stats || {},
+            notifyTrade: !!bd.notifyTrade,
+          };
+          return next;
+        });
+        setActiveCharacter(targetSlot);
+        setLoadToast({ type: 'ok', message: `Loaded "${row.name || 'build'}" into slot ${targetSlot + 1}` });
+        setTimeout(() => setLoadToast(null), 4000);
+      } catch (e) {
+        console.error('[BuildPlanner] load-by-id error:', e);
+        setLoadToast({ type: 'err', message: 'Error loading build' });
+        setTimeout(() => setLoadToast(null), 4000);
+      } finally {
+        stripParams();
+      }
+    })();
+  }, []);
+
   // 2026-04-28 (builder save fix): the prior handler wrote to a non-existent
   // table 'builds' with the wrong column names and no user_id. The real
   // table is `user_builds` (migration 047) with: user_id, slot_number, name,
@@ -289,6 +371,30 @@ export default function BuildPlanner({ permissions = {} }) {
 
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+
+      {/* 2026-05-02 — load-from-WP-button toast (?load / ?cap) */}
+      {loadToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 3000, padding: '10px 18px',
+            fontFamily: DESIGN.fonts.heading || 'Cinzel, serif',
+            fontSize: 14, letterSpacing: '0.5px',
+            color: loadToast.type === 'err' ? '#fff' : '#0d0b0f',
+            background:
+              loadToast.type === 'ok'  ? DESIGN.gold :
+              loadToast.type === 'cap' ? '#e0a800' :
+                                          '#c0392b',
+            border: '1px solid rgba(0,0,0,0.4)',
+            borderRadius: 4,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          }}
+        >
+          {loadToast.message}
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ marginBottom: '30px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
